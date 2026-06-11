@@ -2,6 +2,15 @@
 
 Local MVP portfolio dashboard built with Streamlit, SQLite, yfinance, pandas, and Plotly.
 
+## Core Flow
+
+1. Deposit cash from the sidebar.
+2. Add a stock purchase.
+3. The purchase amount is automatically deducted from available fund.
+4. Update prices to refresh holdings, returns, charts, and snapshots.
+
+The dashboard shows available USD fund at the top of the page. The Cash tab shows balances and the full cash ledger by currency.
+
 ## Setup
 
 ```bash

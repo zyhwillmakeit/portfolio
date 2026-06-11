@@ -16,6 +16,10 @@ class PortfolioTotals:
     total_return_pct: float
 
 
+class InsufficientFundsError(ValueError):
+    pass
+
+
 def load_transactions() -> pd.DataFrame:
     with get_connection() as conn:
         return pd.read_sql_query(
@@ -25,6 +29,56 @@ def load_transactions() -> pd.DataFrame:
             ORDER BY buy_date DESC, id DESC
             """,
             conn,
+        )
+
+
+def load_cash_ledger() -> pd.DataFrame:
+    with get_connection() as conn:
+        return pd.read_sql_query(
+            """
+            SELECT id, entry_date, amount, currency, entry_type, related_transaction_id, note, created_at
+            FROM cash_ledger
+            ORDER BY entry_date DESC, id DESC
+            """,
+            conn,
+        )
+
+
+def get_available_funds() -> pd.DataFrame:
+    with get_connection() as conn:
+        return pd.read_sql_query(
+            """
+            SELECT currency, COALESCE(SUM(amount), 0) AS available_fund
+            FROM cash_ledger
+            GROUP BY currency
+            ORDER BY currency
+            """,
+            conn,
+        )
+
+
+def get_available_fund(currency: str = "USD") -> float:
+    currency = currency.strip().upper()
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS available_fund
+            FROM cash_ledger
+            WHERE currency = ?
+            """,
+            (currency,),
+        ).fetchone()
+    return float(row["available_fund"])
+
+
+def add_deposit(deposit_date: date, amount: float, currency: str, note: str = "") -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO cash_ledger (entry_date, amount, currency, entry_type, note)
+            VALUES (?, ?, ?, 'DEPOSIT', ?)
+            """,
+            (deposit_date.isoformat(), amount, currency.strip().upper(), note.strip()),
         )
 
 
@@ -53,26 +107,62 @@ def add_transaction(
     quantity: float,
     currency: str,
     note: str = "",
-) -> None:
+) -> int:
+    ticker = ticker.strip().upper()
+    currency = currency.strip().upper()
+    purchase_amount = buy_price * quantity
+
     with get_connection() as conn:
-        conn.execute(
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS available_fund
+            FROM cash_ledger
+            WHERE currency = ?
+            """,
+            (currency,),
+        ).fetchone()
+        available_fund = float(row["available_fund"])
+        if purchase_amount > available_fund:
+            raise InsufficientFundsError(
+                f"Need {purchase_amount:,.2f} {currency}, but only {available_fund:,.2f} {currency} is available."
+            )
+
+        cursor = conn.execute(
             """
             INSERT INTO transactions (ticker, buy_date, buy_price, quantity, currency, note)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                ticker.strip().upper(),
+                ticker,
                 buy_date.isoformat(),
                 buy_price,
                 quantity,
-                currency.strip().upper(),
+                currency,
                 note.strip(),
             ),
         )
+        transaction_id = int(cursor.lastrowid)
+        conn.execute(
+            """
+            INSERT INTO cash_ledger (
+                entry_date, amount, currency, entry_type, related_transaction_id, note
+            )
+            VALUES (?, ?, ?, 'PURCHASE', ?, ?)
+            """,
+            (
+                buy_date.isoformat(),
+                -purchase_amount,
+                currency,
+                transaction_id,
+                f"Buy {quantity:g} {ticker} @ {buy_price:g}",
+            ),
+        )
+    return transaction_id
 
 
 def delete_transaction(transaction_id: int) -> None:
     with get_connection() as conn:
+        conn.execute("DELETE FROM cash_ledger WHERE related_transaction_id = ?", (transaction_id,))
         conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
 
 

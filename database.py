@@ -33,6 +33,21 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS cash_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'USD',
+                entry_type TEXT NOT NULL,
+                related_transaction_id INTEGER,
+                note TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (related_transaction_id) REFERENCES transactions(id)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS prices (
                 ticker TEXT NOT NULL,
                 date TEXT NOT NULL,
@@ -58,6 +73,7 @@ def init_db() -> None:
 
 def reset_demo_data() -> None:
     with get_connection() as conn:
+        conn.execute("DELETE FROM cash_ledger")
         conn.execute("DELETE FROM portfolio_snapshots")
         conn.execute("DELETE FROM prices")
         conn.execute("DELETE FROM transactions")

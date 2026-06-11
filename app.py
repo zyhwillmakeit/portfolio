@@ -8,11 +8,16 @@ import streamlit as st
 
 from database import init_db
 from portfolio_engine import (
+    InsufficientFundsError,
     add_transaction,
+    add_deposit,
     calculate_holdings,
     calculate_totals,
     calculate_ytd_return,
     delete_transaction,
+    get_available_fund,
+    get_available_funds,
+    load_cash_ledger,
     load_snapshots,
     load_transactions,
     save_snapshot,
@@ -39,6 +44,23 @@ def money(value: float | None) -> str:
 st.title("Portfolio Monitor")
 
 with st.sidebar:
+    st.header("Deposit Fund")
+    with st.form("add_deposit", clear_on_submit=True):
+        deposit_date = st.date_input("Deposit date", value=date.today())
+        deposit_amount = st.number_input("Deposit amount", min_value=0.0, value=1000.0, step=100.0)
+        deposit_currency = st.selectbox("Deposit currency", ["USD", "HKD", "CNY", "EUR", "JPY"])
+        deposit_note = st.text_input("Deposit note", placeholder="Initial funding")
+        deposit_submitted = st.form_submit_button("Deposit")
+
+    if deposit_submitted:
+        if deposit_amount <= 0:
+            st.error("Deposit amount must be positive.")
+        else:
+            add_deposit(deposit_date, deposit_amount, deposit_currency, deposit_note)
+            st.success(f"Deposited {money(deposit_amount)} {deposit_currency}.")
+            st.rerun()
+
+    st.divider()
     st.header("Add Transaction")
     with st.form("add_transaction", clear_on_submit=True):
         ticker = st.text_input("Ticker", placeholder="AAPL")
@@ -55,9 +77,12 @@ with st.sidebar:
         elif buy_price <= 0 or quantity <= 0:
             st.error("Buy price and quantity must be positive.")
         else:
-            add_transaction(ticker, buy_date, buy_price, quantity, currency, note)
-            st.success(f"Added {ticker.strip().upper()}.")
-            st.rerun()
+            try:
+                add_transaction(ticker, buy_date, buy_price, quantity, currency, note)
+                st.success(f"Added {ticker.strip().upper()} and deducted {money(buy_price * quantity)}.")
+                st.rerun()
+            except InsufficientFundsError as exc:
+                st.error(str(exc))
 
     st.divider()
     st.header("Manual Price")
@@ -79,13 +104,15 @@ holdings = calculate_holdings()
 totals = calculate_totals(holdings)
 snapshots = load_snapshots()
 ytd_return = calculate_ytd_return(snapshots, totals.total_market_value)
+available_usd = get_available_fund("USD")
 
-top_cols = st.columns([1, 1, 1, 1, 1])
-top_cols[0].metric("Market Value", money(totals.total_market_value))
-top_cols[1].metric("Cost Basis", money(totals.total_cost))
-top_cols[2].metric("Unrealized Gain", money(totals.unrealized_gain))
-top_cols[3].metric("Total Return", pct(totals.total_return_pct))
-top_cols[4].metric("YTD Return", pct(ytd_return))
+top_cols = st.columns([1, 1, 1, 1, 1, 1])
+top_cols[0].metric("Available Fund", money(available_usd))
+top_cols[1].metric("Market Value", money(totals.total_market_value))
+top_cols[2].metric("Cost Basis", money(totals.total_cost))
+top_cols[3].metric("Unrealized Gain", money(totals.unrealized_gain))
+top_cols[4].metric("Total Return", pct(totals.total_return_pct))
+top_cols[5].metric("YTD Return", pct(ytd_return))
 
 action_cols = st.columns([1, 1, 4])
 if action_cols[0].button("Update Latest Prices", use_container_width=True):
@@ -104,8 +131,8 @@ if action_cols[1].button("Save Snapshot", use_container_width=True):
     st.success("Snapshot saved.")
     st.rerun()
 
-tab_holdings, tab_transactions, tab_charts, tab_export = st.tabs(
-    ["Holdings", "Transactions", "Charts", "Export"]
+tab_holdings, tab_cash, tab_transactions, tab_charts, tab_export = st.tabs(
+    ["Holdings", "Cash", "Transactions", "Charts", "Export"]
 )
 
 with tab_holdings:
@@ -135,6 +162,38 @@ with tab_holdings:
             }
         )
         st.dataframe(display, use_container_width=True, hide_index=True)
+
+with tab_cash:
+    balances = get_available_funds()
+    ledger = load_cash_ledger()
+    if balances.empty:
+        st.info("Deposit funds from the sidebar before buying stocks.")
+    else:
+        st.subheader("Available Fund by Currency")
+        balance_display = balances.copy()
+        balance_display["available_fund"] = balance_display["available_fund"].map(lambda value: f"{value:,.2f}")
+        balance_display = balance_display.rename(
+            columns={"currency": "Currency", "available_fund": "Available Fund"}
+        )
+        st.dataframe(balance_display, use_container_width=True, hide_index=True)
+
+    if not ledger.empty:
+        st.subheader("Cash Ledger")
+        ledger_display = ledger.copy()
+        ledger_display["amount"] = ledger_display["amount"].map(lambda value: f"{value:,.2f}")
+        ledger_display = ledger_display.rename(
+            columns={
+                "id": "ID",
+                "entry_date": "Date",
+                "amount": "Amount",
+                "currency": "Currency",
+                "entry_type": "Type",
+                "related_transaction_id": "Stock Transaction ID",
+                "note": "Note",
+                "created_at": "Created At",
+            }
+        )
+        st.dataframe(ledger_display, use_container_width=True, hide_index=True)
 
 with tab_transactions:
     transactions = load_transactions()
@@ -212,4 +271,13 @@ with tab_export:
         mime="text/csv",
         use_container_width=True,
         disabled=holdings.empty,
+    )
+    ledger = load_cash_ledger()
+    export_cols[0].download_button(
+        "Download Cash Ledger CSV",
+        data=ledger.to_csv(index=False).encode("utf-8"),
+        file_name="cash_ledger.csv",
+        mime="text/csv",
+        use_container_width=True,
+        disabled=ledger.empty,
     )
