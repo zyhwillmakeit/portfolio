@@ -11,6 +11,8 @@ Local MVP portfolio dashboard built with Streamlit, SQLite, yfinance, pandas, an
 
 The dashboard shows available USD fund at the top of the page. The Cash tab shows balances and the full cash ledger by currency.
 
+Annualized return is shown only after a position has been held for at least 30 days, which avoids misleading same-day annualization spikes. YTD return is shown after there is a saved snapshot from earlier in the current year.
+
 ## Setup
 
 ```bash

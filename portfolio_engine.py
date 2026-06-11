@@ -8,6 +8,9 @@ import pandas as pd
 from database import get_connection
 
 
+MIN_ANNUALIZED_HOLDING_DAYS = 30
+
+
 @dataclass(frozen=True)
 class PortfolioTotals:
     total_cost: float
@@ -216,9 +219,18 @@ def calculate_holdings(as_of: date | None = None) -> pd.DataFrame:
     holdings["total_return_pct"] = holdings["unrealized_gain"] / holdings["cost_basis"]
 
     first_buy_dates = pd.to_datetime(holdings["first_buy_date"]).dt.date
-    holding_days = first_buy_dates.map(lambda d: max((as_of - d).days, 1))
+    holding_days = first_buy_dates.map(lambda d: max((as_of - d).days, 0))
     growth = holdings["market_value"] / holdings["cost_basis"]
-    holdings["annualized_return_pct"] = growth.pow(365 / holding_days) - 1
+    annualized_mask = (
+        holding_days.ge(MIN_ANNUALIZED_HOLDING_DAYS)
+        & growth.notna()
+        & holdings["cost_basis"].gt(0)
+        & growth.gt(0)
+    )
+    holdings["annualized_return_pct"] = pd.NA
+    holdings.loc[annualized_mask, "annualized_return_pct"] = (
+        growth[annualized_mask].pow(365 / holding_days[annualized_mask]) - 1
+    )
 
     total_market_value = holdings["market_value"].sum(skipna=True)
     holdings["weight"] = holdings["market_value"] / total_market_value if total_market_value else 0
@@ -278,7 +290,8 @@ def calculate_ytd_return(snapshots: pd.DataFrame, current_value: float) -> float
         return None
 
     current_year = datetime.now().year
-    ytd = snapshots[snapshots["date"].dt.year == current_year]
+    today = pd.Timestamp(date.today())
+    ytd = snapshots[(snapshots["date"].dt.year == current_year) & (snapshots["date"] < today)]
     if ytd.empty:
         return None
 
