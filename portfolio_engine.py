@@ -127,7 +127,7 @@ def add_transaction(
         available_fund = float(row["available_fund"])
         if purchase_amount > available_fund:
             raise InsufficientFundsError(
-                f"Need {purchase_amount:,.2f} {currency}, but only {available_fund:,.2f} {currency} is available."
+                f"需要 {purchase_amount:,.2f} {currency}，当前可用资金只有 {available_fund:,.2f} {currency}。"
             )
 
         cursor = conn.execute(

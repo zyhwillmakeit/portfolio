@@ -25,79 +25,90 @@ from portfolio_engine import (
 from price_fetcher import cache_manual_price, update_held_ticker_prices
 
 
-st.set_page_config(page_title="Portfolio Monitor", layout="wide")
+st.set_page_config(page_title="投资组合监控", layout="wide")
 init_db()
+
+st.markdown(
+    """
+    <style>
+    #MainMenu, footer, header [data-testid="stToolbar"], .stDeployButton {
+        display: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 def pct(value: float | None) -> str:
     if value is None or pd.isna(value):
-        return "N/A"
+        return "暂无"
     return f"{value:.2%}"
 
 
 def money(value: float | None) -> str:
     if value is None or pd.isna(value):
-        return "N/A"
+        return "暂无"
     return f"${value:,.2f}"
 
 
-st.title("Portfolio Monitor")
+st.title("投资组合监控")
 
 with st.sidebar:
-    st.header("Deposit Fund")
+    st.header("存入资金")
     with st.form("add_deposit", clear_on_submit=True):
-        deposit_date = st.date_input("Deposit date", value=date.today())
-        deposit_amount = st.number_input("Deposit amount", min_value=0.0, value=1000.0, step=100.0)
-        deposit_currency = st.selectbox("Deposit currency", ["USD", "HKD", "CNY", "EUR", "JPY"])
-        deposit_note = st.text_input("Deposit note", placeholder="Initial funding")
-        deposit_submitted = st.form_submit_button("Deposit")
+        deposit_date = st.date_input("存入日期", value=date.today())
+        deposit_amount = st.number_input("存入金额", min_value=0.0, value=1000.0, step=100.0)
+        deposit_currency = st.selectbox("存入币种", ["USD", "HKD", "CNY", "EUR", "JPY"])
+        deposit_note = st.text_input("备注", placeholder="初始资金")
+        deposit_submitted = st.form_submit_button("存入")
 
     if deposit_submitted:
         if deposit_amount <= 0:
-            st.error("Deposit amount must be positive.")
+            st.error("存入金额必须大于 0。")
         else:
             add_deposit(deposit_date, deposit_amount, deposit_currency, deposit_note)
-            st.success(f"Deposited {money(deposit_amount)} {deposit_currency}.")
+            st.success(f"已存入 {money(deposit_amount)} {deposit_currency}。")
             st.rerun()
 
     st.divider()
-    st.header("Add Transaction")
+    st.header("添加买入交易")
     with st.form("add_transaction", clear_on_submit=True):
-        ticker = st.text_input("Ticker", placeholder="AAPL")
-        buy_date = st.date_input("Buy date", value=date.today())
-        buy_price = st.number_input("Buy price", min_value=0.0, value=100.0, step=1.0)
-        quantity = st.number_input("Quantity", min_value=0.0, value=1.0, step=1.0)
-        currency = st.selectbox("Currency", ["USD", "HKD", "CNY", "EUR", "JPY"])
-        note = st.text_area("Note", height=80)
-        submitted = st.form_submit_button("Add")
+        ticker = st.text_input("股票代码", placeholder="AAPL")
+        buy_date = st.date_input("买入日期", value=date.today())
+        buy_price = st.number_input("买入价格", min_value=0.0, value=100.0, step=1.0)
+        quantity = st.number_input("数量", min_value=0.0, value=1.0, step=1.0)
+        currency = st.selectbox("币种", ["USD", "HKD", "CNY", "EUR", "JPY"])
+        note = st.text_area("备注", height=80)
+        submitted = st.form_submit_button("添加")
 
     if submitted:
         if not ticker.strip():
-            st.error("Ticker is required.")
+            st.error("请输入股票代码。")
         elif buy_price <= 0 or quantity <= 0:
-            st.error("Buy price and quantity must be positive.")
+            st.error("买入价格和数量必须大于 0。")
         else:
             try:
                 add_transaction(ticker, buy_date, buy_price, quantity, currency, note)
-                st.success(f"Added {ticker.strip().upper()} and deducted {money(buy_price * quantity)}.")
+                st.success(f"已添加 {ticker.strip().upper()}，并扣除 {money(buy_price * quantity)}。")
                 st.rerun()
             except InsufficientFundsError as exc:
                 st.error(str(exc))
 
     st.divider()
-    st.header("Manual Price")
+    st.header("手动录入价格")
     with st.form("manual_price", clear_on_submit=True):
-        manual_ticker = st.text_input("Price ticker", placeholder="MSFT")
-        manual_date = st.date_input("Price date", value=date.today())
-        manual_price = st.number_input("Close price", min_value=0.0, value=100.0, step=1.0)
-        manual_submitted = st.form_submit_button("Save Price")
+        manual_ticker = st.text_input("股票代码", placeholder="MSFT")
+        manual_date = st.date_input("价格日期", value=date.today())
+        manual_price = st.number_input("收盘价", min_value=0.0, value=100.0, step=1.0)
+        manual_submitted = st.form_submit_button("保存价格")
 
     if manual_submitted:
         if not manual_ticker.strip() or manual_price <= 0:
-            st.error("Ticker and a positive close price are required.")
+            st.error("请输入股票代码和大于 0 的收盘价。")
         else:
             cache_manual_price(manual_ticker, manual_price, manual_date)
-            st.success(f"Saved {manual_ticker.strip().upper()} price.")
+            st.success(f"已保存 {manual_ticker.strip().upper()} 的价格。")
             st.rerun()
 
 holdings = calculate_holdings()
@@ -107,37 +118,37 @@ ytd_return = calculate_ytd_return(snapshots, totals.total_market_value)
 available_usd = get_available_fund("USD")
 
 top_cols = st.columns([1, 1, 1, 1, 1, 1])
-top_cols[0].metric("Available Fund", money(available_usd))
-top_cols[1].metric("Market Value", money(totals.total_market_value))
-top_cols[2].metric("Cost Basis", money(totals.total_cost))
-top_cols[3].metric("Unrealized Gain", money(totals.unrealized_gain))
-top_cols[4].metric("Total Return", pct(totals.total_return_pct))
-top_cols[5].metric("YTD Return", pct(ytd_return))
+top_cols[0].metric("可用资金", money(available_usd))
+top_cols[1].metric("当前市值", money(totals.total_market_value))
+top_cols[2].metric("持仓成本", money(totals.total_cost))
+top_cols[3].metric("未实现盈亏", money(totals.unrealized_gain))
+top_cols[4].metric("总收益率", pct(totals.total_return_pct))
+top_cols[5].metric("年初至今收益率", pct(ytd_return))
 
 action_cols = st.columns([1, 1, 4])
-if action_cols[0].button("Update Latest Prices", use_container_width=True):
+if action_cols[0].button("更新最新价格", width="stretch"):
     updated, errors = update_held_ticker_prices()
     refreshed_holdings = calculate_holdings()
     refreshed_totals = calculate_totals(refreshed_holdings)
     save_snapshot(date.today(), refreshed_totals)
     if not updated.empty:
-        st.success(f"Updated {len(updated)} ticker(s).")
+        st.success(f"已更新 {len(updated)} 个股票价格。")
     if errors:
         st.warning("\n".join(errors))
     st.rerun()
 
-if action_cols[1].button("Save Snapshot", use_container_width=True):
+if action_cols[1].button("保存快照", width="stretch"):
     save_snapshot(date.today(), totals)
-    st.success("Snapshot saved.")
+    st.success("快照已保存。")
     st.rerun()
 
 tab_holdings, tab_cash, tab_transactions, tab_charts, tab_export = st.tabs(
-    ["Holdings", "Cash", "Transactions", "Charts", "Export"]
+    ["持仓", "资金", "交易记录", "图表", "导出"]
 )
 
 with tab_holdings:
     if holdings.empty:
-        st.info("Add your first transaction from the sidebar.")
+        st.info("请先在侧边栏添加第一笔交易。")
     else:
         display = holdings.copy()
         for col in ["cost_basis", "avg_cost", "current_price", "market_value", "unrealized_gain"]:
@@ -146,80 +157,95 @@ with tab_holdings:
             display[col] = display[col].map(pct)
         display = display.rename(
             columns={
-                "ticker": "Ticker",
-                "currency": "Currency",
-                "quantity": "Quantity",
-                "cost_basis": "Cost Basis",
-                "avg_cost": "Avg Cost",
-                "current_price": "Current Price",
-                "price_date": "Price Date",
-                "market_value": "Market Value",
-                "unrealized_gain": "Unrealized Gain",
-                "total_return_pct": "Total Return",
-                "annualized_return_pct": "Annualized Return",
-                "weight": "Weight",
-                "first_buy_date": "First Buy Date",
+                "ticker": "股票代码",
+                "currency": "币种",
+                "quantity": "数量",
+                "cost_basis": "持仓成本",
+                "avg_cost": "平均成本",
+                "current_price": "当前价格",
+                "price_date": "价格日期",
+                "market_value": "当前市值",
+                "unrealized_gain": "未实现盈亏",
+                "total_return_pct": "总收益率",
+                "annualized_return_pct": "年化收益率",
+                "weight": "组合占比",
+                "first_buy_date": "首次买入日期",
             }
         )
-        st.dataframe(display, use_container_width=True, hide_index=True)
+        st.table(display)
 
 with tab_cash:
     balances = get_available_funds()
     ledger = load_cash_ledger()
     if balances.empty:
-        st.info("Deposit funds from the sidebar before buying stocks.")
+        st.info("买入股票前，请先在侧边栏存入资金。")
     else:
-        st.subheader("Available Fund by Currency")
+        st.subheader("各币种可用资金")
         balance_display = balances.copy()
         balance_display["available_fund"] = balance_display["available_fund"].map(lambda value: f"{value:,.2f}")
         balance_display = balance_display.rename(
-            columns={"currency": "Currency", "available_fund": "Available Fund"}
+            columns={"currency": "币种", "available_fund": "可用资金"}
         )
-        st.dataframe(balance_display, use_container_width=True, hide_index=True)
+        st.table(balance_display)
 
     if not ledger.empty:
-        st.subheader("Cash Ledger")
+        st.subheader("资金流水")
         ledger_display = ledger.copy()
         ledger_display["amount"] = ledger_display["amount"].map(lambda value: f"{value:,.2f}")
+        ledger_display["entry_type"] = ledger_display["entry_type"].replace(
+            {"DEPOSIT": "存入", "PURCHASE": "买入扣款"}
+        )
         ledger_display = ledger_display.rename(
             columns={
                 "id": "ID",
-                "entry_date": "Date",
-                "amount": "Amount",
-                "currency": "Currency",
-                "entry_type": "Type",
-                "related_transaction_id": "Stock Transaction ID",
-                "note": "Note",
-                "created_at": "Created At",
+                "entry_date": "日期",
+                "amount": "金额",
+                "currency": "币种",
+                "entry_type": "类型",
+                "related_transaction_id": "关联交易 ID",
+                "note": "备注",
+                "created_at": "创建时间",
             }
         )
-        st.dataframe(ledger_display, use_container_width=True, hide_index=True)
+        st.table(ledger_display)
 
 with tab_transactions:
     transactions = load_transactions()
     if transactions.empty:
-        st.info("No transactions yet.")
+        st.info("暂无交易记录。")
     else:
-        st.dataframe(transactions, use_container_width=True, hide_index=True)
+        transaction_display = transactions.rename(
+            columns={
+                "id": "ID",
+                "ticker": "股票代码",
+                "buy_date": "买入日期",
+                "buy_price": "买入价格",
+                "quantity": "数量",
+                "currency": "币种",
+                "note": "备注",
+                "created_at": "创建时间",
+            }
+        )
+        st.table(transaction_display)
         delete_id = st.number_input(
-            "Transaction ID to delete",
+            "要删除的交易 ID",
             min_value=0,
             value=0,
             step=1,
-            help="Use the id from the transactions table.",
+            help="请使用交易记录表中的 ID。",
         )
-        if st.button("Delete Transaction") and delete_id:
+        if st.button("删除交易") and delete_id:
             delete_transaction(int(delete_id))
-            st.success(f"Deleted transaction {delete_id}.")
+            st.success(f"已删除交易 {delete_id}。")
             st.rerun()
 
 with tab_charts:
     if holdings.empty:
-        st.info("Charts appear after holdings have prices.")
+        st.info("持仓有价格后会显示图表。")
     else:
         chart_data = holdings.dropna(subset=["market_value"])
         if chart_data.empty:
-            st.info("Update or enter prices to show charts.")
+            st.info("请更新或手动录入价格后查看图表。")
         else:
             chart_cols = st.columns(2)
             allocation = px.pie(
@@ -227,19 +253,27 @@ with tab_charts:
                 names="ticker",
                 values="market_value",
                 hole=0.45,
-                title="Allocation",
+                title="资产配置",
             )
-            chart_cols[0].plotly_chart(allocation, use_container_width=True)
+            chart_cols[0].plotly_chart(
+                allocation,
+                width="stretch",
+                config={"displayModeBar": False},
+            )
 
             returns = px.bar(
                 chart_data,
                 x="ticker",
                 y="total_return_pct",
-                title="Return by Holding",
-                labels={"total_return_pct": "Total Return", "ticker": "Ticker"},
+                title="各持仓收益率",
+                labels={"total_return_pct": "总收益率", "ticker": "股票代码"},
             )
             returns.update_yaxes(tickformat=".0%")
-            chart_cols[1].plotly_chart(returns, use_container_width=True)
+            chart_cols[1].plotly_chart(
+                returns,
+                width="stretch",
+                config={"displayModeBar": False},
+            )
 
     snapshots = load_snapshots()
     if not snapshots.empty:
@@ -247,37 +281,37 @@ with tab_charts:
             snapshots,
             x="date",
             y="total_market_value",
-            title="Portfolio Value",
-            labels={"date": "Date", "total_market_value": "Market Value"},
+            title="组合市值走势",
+            labels={"date": "日期", "total_market_value": "当前市值"},
             markers=True,
         )
-        st.plotly_chart(value_curve, use_container_width=True)
+        st.plotly_chart(value_curve, width="stretch", config={"displayModeBar": False})
 
 with tab_export:
     transactions = load_transactions()
     export_cols = st.columns(2)
     export_cols[0].download_button(
-        "Download Transactions CSV",
+        "下载交易记录 CSV",
         data=transactions.to_csv(index=False).encode("utf-8"),
         file_name="transactions.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
         disabled=transactions.empty,
     )
     export_cols[1].download_button(
-        "Download Holdings CSV",
+        "下载持仓 CSV",
         data=holdings.to_csv(index=False).encode("utf-8"),
         file_name="holdings.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
         disabled=holdings.empty,
     )
     ledger = load_cash_ledger()
     export_cols[0].download_button(
-        "Download Cash Ledger CSV",
+        "下载资金流水 CSV",
         data=ledger.to_csv(index=False).encode("utf-8"),
         file_name="cash_ledger.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
         disabled=ledger.empty,
     )
